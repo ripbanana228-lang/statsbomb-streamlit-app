@@ -864,39 +864,50 @@ def zip_folder(folder: Path) -> bytes:
 
 def main():
     st.title("StatsBomb Open Data — Match Report (Streamlit)")
+    st.markdown(
+        "Configura el partido y las salidas aquí abajo. "
+        "Las opciones y botones están en el área principal (mobile-first)."
+    )
 
-    with st.sidebar:
-        st.header("Selección de partido")
-        comps = get_competitions()
+    comps = get_competitions()
 
-        # Detect typical columns
-        cid_col = "competition_id" if "competition_id" in comps.columns else "competition"
-        sid_col = "season_id" if "season_id" in comps.columns else "season"
-        cn_col  = "competition_name" if "competition_name" in comps.columns else "competition"
-        sn_col  = "season_name" if "season_name" in comps.columns else "season"
+    # Detect typical columns
+    cid_col = "competition_id" if "competition_id" in comps.columns else "competition"
+    sid_col = "season_id" if "season_id" in comps.columns else "season"
+    cn_col  = "competition_name" if "competition_name" in comps.columns else "competition"
+    sn_col  = "season_name" if "season_name" in comps.columns else "season"
 
-        comps_view = comps.copy()
-        if cn_col in comps_view.columns and sn_col in comps_view.columns:
-            comps_view = comps_view.sort_values([cn_col, sn_col])
+    comps_view = comps.copy()
+    if cn_col in comps_view.columns and sn_col in comps_view.columns:
+        comps_view = comps_view.sort_values([cn_col, sn_col])
 
-        def comp_label(r):
-            cn = str(r.get(cn_col, "")).strip()
-            sn = str(r.get(sn_col, "")).strip()
-            return f"{cn} | {sn} (cid={int(r[cid_col])}, sid={int(r[sid_col])})"
+    def comp_label(r):
+        cn = str(r.get(cn_col, "")).strip()
+        sn = str(r.get(sn_col, "")).strip()
+        return f"{cn} | {sn} (cid={int(r[cid_col])}, sid={int(r[sid_col])})"
 
-        comp_options = [(comp_label(r), (int(r[cid_col]), int(r[sid_col]))) for _, r in comps_view.iterrows()]
+    comp_options = [(comp_label(r), (int(r[cid_col]), int(r[sid_col]))) for _, r in comps_view.iterrows()]
 
-        comp_choice = st.selectbox("Competición / temporada", options=comp_options, format_func=lambda x: x[0])
-        competition_id, season_id = comp_choice[1]
+    st.markdown("### 1) Selecciona competición")
+    with st.form("step1_competition", clear_on_submit=False):
+        # Default selection (first item) so the user can just hit "Continuar"
+        comp_choice = st.selectbox(
+            "Competición / temporada",
+            options=comp_options,
+            format_func=lambda x: x[0],
+            key="comp_choice",
+        )
+        go_next = st.form_submit_button("Continuar", use_container_width=True)
 
-        st.divider()
-        st.header("Opciones")
-        save_csv = st.checkbox("Guardar CSV", value=True)
-        save_parquet = st.checkbox("Guardar Parquet", value=True)
-        save_figs = st.checkbox("Guardar gráficas PNG", value=True)
-        build_report = st.checkbox("Crear Match Report (PNG+PDF)", value=True, help="Compone un dashboard final a partir de las PNG guardadas.")
+    # Persist selection only when user clicks "Continuar"
+    if go_next or ("competition_id" not in st.session_state):
+        st.session_state["competition_id"] = comp_choice[1][0]
+        st.session_state["season_id"] = comp_choice[1][1]
+        # Reset match selection when competition changes
+        st.session_state.pop("match_id", None)
 
-        run = st.button("Generar", type="primary")
+    competition_id = st.session_state.get("competition_id")
+    season_id = st.session_state.get("season_id")
 
     matches = get_matches(competition_id, season_id)
 
@@ -906,7 +917,6 @@ def main():
         st.error("No se encontró match_id en el DataFrame de matches.")
         st.stop()
 
-    # Prefer readable label
     def pick(cols, r):
         for c in cols:
             if c in matches.columns:
@@ -924,7 +934,6 @@ def main():
         return f"{ht} vs {at}{score}{meta} | match_id={int(r[mid_col])}"
 
     matches_view = matches.copy()
-    # basic sort: date if exists
     for dc in ["match_date","date","kick_off"]:
         if dc in matches_view.columns:
             matches_view = matches_view.sort_values(dc)
@@ -932,22 +941,42 @@ def main():
 
     match_options = [(match_label(r), int(r[mid_col])) for _, r in matches_view.iterrows()]
 
-    sel = st.selectbox("Partido", options=match_options, format_func=lambda x: x[0])
-    match_id = sel[1]
+    st.markdown("### 2) Selecciona partido y opciones")
+    with st.form("step2_match_and_options", clear_on_submit=False):
+        sel = st.selectbox(
+            "Partido",
+            options=match_options,
+            format_func=lambda x: x[0],
+            key="match_choice",
+        )
+        match_id = sel[1]
 
-    colA, colB = st.columns([2,1], gap="large")
+        st.markdown("**Opciones de salida**")
+        o1, o2, o3, o4 = st.columns([1, 1, 1, 1], gap="medium")
+        with o1:
+            save_csv = st.checkbox("Guardar CSV", value=True, key="save_csv")
+        with o2:
+            save_parquet = st.checkbox("Guardar Parquet", value=True, key="save_parquet")
+        with o3:
+            save_figs = st.checkbox("Guardar gráficas PNG", value=True, key="save_figs")
+        with o4:
+            build_report = st.checkbox(
+                "Crear Match Report (PNG+PDF)",
+                value=True,
+                help="Compone un dashboard final a partir de las PNG guardadas.",
+                key="build_report",
+            )
+
+        run = st.form_submit_button("Generar", type="primary", use_container_width=True)
+
+    # Only persist match_id when user submits the form (Generar)
+    if run:
+        st.session_state["match_id"] = match_id
+
+    colA, colB = st.columns([2, 1], gap="large")
 
     with colA:
         st.subheader("Vista rápida")
-        st.dataframe(matches_view[matches_view[mid_col]==match_id].head(1), use_container_width=True)
-
-    with colB:
-        st.subheader("Descargas")
-        st.caption("Después de generar, aquí podrás descargar un ZIP con todo (data + gráficas).")
-
-    if not run:
-        st.info("Selecciona competición y partido, luego presiona **Generar**.")
-        return
 
     with st.spinner("Descargando y procesando datos…"):
         events = get_events(match_id)
