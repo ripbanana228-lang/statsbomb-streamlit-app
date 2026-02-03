@@ -1,9 +1,14 @@
+# Core app
 streamlit
 pandas
-numpy
+numpy<2.2
 matplotlib
 mplsoccer
 statsbombpy
 pyarrow
 pillow
 requests
+
+# ML (goal_diff model)
+scikit-learn<1.7,>=1.2
+joblib
